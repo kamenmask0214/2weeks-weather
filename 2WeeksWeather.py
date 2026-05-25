@@ -9,6 +9,22 @@ st.set_page_config(page_title="気象監視ダッシュボード 2WeeksWeather",
 st.title("気象監視ダッシュボード 2WeeksWeather")
 
 # =================================================================
+# スマホ用のカスタムCSS（表の文字サイズを少し小さくし、余白を詰める）
+# =================================================================
+st.markdown("""
+    <style>
+    /* Streamlitのデータフレーム全体の文字サイズを調整 */
+    .stDataFrame div[data-testid="stTable"] div {
+        font-size: 13px !important;
+    }
+    /* 表内のセルのパディング（余白）を詰めて凝縮する */
+    .stDataFrame td, .stDataFrame th {
+        padding: 6px 4px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# =================================================================
 # 0. パス設定とお気に入り（プロジェクト）データの読み込み・保存関数
 # =================================================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -212,34 +228,38 @@ if st.session_state.selected_locations:
                     cloud = int(day.get('cloudcover', 0))
                     vc_rain = int(day.get('precipprob', 0))
                     
+                    # 📱 スマホで見やすいよう、少しコンパクトなテキスト表現に変更
                     cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
                     if jma_key in jma_data:
-                        cell_text += f" | {jma_data[jma_key]}"
+                        cell_text += f"\n| {jma_data[jma_key]}"
                     
                     location_forecasts[date_str] = cell_text
                 weather_matrix[display_id] = location_forecasts
                 
     if weather_matrix:
-        # 💡 ベースとなるマトリクスを作成（行：地域、列：日付）
         df_base = pd.DataFrame(weather_matrix).T
         
         st.subheader("📊 選択エリアの2週間気象比較マトリクス")
         
-        # 📱 【追加機能】スマートフォン向け縦横反転切り替え
         is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
         
         if is_mobile_view:
-            # チェックON：行（日付）× 列（地域）に入れ替え
+            # 💡 スマホ表示時は、地域名（インデックス）から「【〇〇県】」と「周辺」を消し去る
+            short_names = []
+            for name in df_base.index:
+                s_name = name.split("】")[-1].strip() # 【島根県】 をカット
+                s_name = s_name.replace("周辺", "")     # 「周辺」をカット
+                short_names.append(s_name)
+            
+            df_base.index = short_names
             df_display = df_base.T
         else:
-            # チェックOFF：通常表示（行：地域 × 列：日付）
             df_display = df_base
             
-        # 背景色スタイルを適用して表示
         styled_df = df_display.style.map(style_weather)
         st.dataframe(styled_df, use_container_width=True)
         st.caption("※雲量30%以下は水色、降水確率 50%以上は赤で表示しています。")
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.4.0 Mobile-Optimized Edition")
+st.caption("ver1.4.1 Smartphone-Fluid Layout")
