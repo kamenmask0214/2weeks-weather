@@ -11,7 +11,6 @@ st.title("気象監視ダッシュボード 2WeeksWeather")
 # =================================================================
 # 0. パス設定とお気に入り（プロジェクト）データの読み込み・保存関数
 # =================================================================
-# 💡 クラウド環境でもエラーにならないパスの書き方
 current_dir = os.path.dirname(os.path.abspath(__file__))
 SAVE_FILE = os.path.join(current_dir, "selected_locations.json")
 
@@ -32,11 +31,10 @@ def save_all_projects(projects_dict):
         st.error(f"プロジェクトの保存に失敗しました: {e}")
 
 # =================================================================
-# 1. 外部CSVマスターデータの読み込み（相対パスに変更）
+# 1. 外部CSVマスターデータの読み込み
 # =================================================================
 @st.cache_data
 def load_location_master():
-    # 💡 クラウド用：プログラムと同じフォルダにCSVを置く前提の「相対パス」に変更
     csv_path = os.path.join(current_dir, "all_locations.csv")
     try:
         df = pd.read_csv(csv_path, encoding="utf-8")
@@ -124,7 +122,6 @@ else:
 # 4. 気象データの取得・判定関数
 # =================================================================
 def get_weather_data(location):
-    # 💡 クラウド用：APIキーを st.secrets から安全に取得（ソースコードに鍵を書かない）
     try:
         api_key = st.secrets["vc_api_key"]
     except:
@@ -223,11 +220,26 @@ if st.session_state.selected_locations:
                 weather_matrix[display_id] = location_forecasts
                 
     if weather_matrix:
-        df = pd.DataFrame(weather_matrix).T
+        # 💡 ベースとなるマトリクスを作成（行：地域、列：日付）
+        df_base = pd.DataFrame(weather_matrix).T
+        
         st.subheader("📊 選択エリアの2週間気象比較マトリクス")
-        styled_df = df.style.map(style_weather)
+        
+        # 📱 【追加機能】スマートフォン向け縦横反転切り替え
+        is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
+        
+        if is_mobile_view:
+            # チェックON：行（日付）× 列（地域）に入れ替え
+            df_display = df_base.T
+        else:
+            # チェックOFF：通常表示（行：地域 × 列：日付）
+            df_display = df_base
+            
+        # 背景色スタイルを適用して表示
+        styled_df = df_display.style.map(style_weather)
         st.dataframe(styled_df, use_container_width=True)
+        st.caption("※雲量30%以下は水色、降水確率 50%以上は赤で表示しています。")
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.3.0 Cloud-Ready Edition")
+st.caption("ver1.4.0 Mobile-Optimized Edition")
