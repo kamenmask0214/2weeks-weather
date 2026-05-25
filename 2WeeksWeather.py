@@ -228,10 +228,9 @@ if st.session_state.selected_locations:
                     cloud = int(day.get('cloudcover', 0))
                     vc_rain = int(day.get('precipprob', 0))
                     
-                    # 📱 スマホで見やすいよう、少しコンパクトなテキスト表現に変更
                     cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
                     if jma_key in jma_data:
-                        cell_text += f"\n| {jma_data[jma_key]}"
+                        cell_text += f" | {jma_data[jma_key]}"
                     
                     location_forecasts[date_str] = cell_text
                 weather_matrix[display_id] = location_forecasts
@@ -243,23 +242,36 @@ if st.session_state.selected_locations:
         
         is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
         
+        # 💡 列設定（column_config）の初期化
+        col_config = {}
+        
         if is_mobile_view:
-            # 💡 スマホ表示時は、地域名（インデックス）から「【〇〇県】」と「周辺」を消し去る
             short_names = []
             for name in df_base.index:
-                s_name = name.split("】")[-1].strip() # 【島根県】 をカット
-                s_name = s_name.replace("周辺", "")     # 「周辺」をカット
+                s_name = name.split("】")[-1].strip()
+                s_name = s_name.replace("周辺", "")
                 short_names.append(s_name)
             
             df_base.index = short_names
             df_display = df_base.T
+            
+            # 📱 【スマホ用・幅の固定割り当て】
+            # 左端の「日付列」の幅を 85px にガチガチに固定して余白を抹殺
+            col_config["_index"] = st.column_config.Column(width=85)
+            # 各地域名の列の幅を 140px に固定して、文字が1行でスッキリ収まるように調整
+            for col in df_display.columns:
+                col_config[col] = st.column_config.Column(width=140)
         else:
             df_display = df_base
+            # パソコン表示時は自動幅調整
+            col_config = None
             
         styled_df = df_display.style.map(style_weather)
-        st.dataframe(styled_df, use_container_width=True)
+        
+        # 💡 column_config を適用してデータフレームを表示
+        st.dataframe(styled_df, use_container_width=True, column_config=col_config)
         st.caption("※雲量30%以下は水色、降水確率 50%以上は赤で表示しています。")
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.4.1 Smartphone-Fluid Layout")
+st.caption("ver1.4.2 Column-Anchored Layout")
