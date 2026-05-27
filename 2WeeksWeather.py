@@ -9,32 +9,6 @@ st.set_page_config(page_title="気象監視ダッシュボード 2WeeksWeather",
 st.title("気象監視ダッシュボード 2WeeksWeather")
 
 # =================================================================
-# スマホ用のカスタムCSS（改行を強制し、文字サイズと余白を最適化）
-# =================================================================
-st.markdown("""
-    <style>
-    /* データフレーム全体の文字サイズを調整 */
-    .stDataFrame div[data-testid="stTable"] div {
-        font-size: 13px !important;
-    }
-    /* 表内のセルのパディング（余白）を詰めて凝縮する */
-    .stDataFrame td, .stDataFrame th {
-        padding: 6px 4px !important;
-    }
-    /* 🔴 セル内での改行(\n)をあらゆるブラウザ・環境で絶対に強制する設定 */
-    .stDataFrame div[data-testid="stTable"] td [data-testid="stVisualStyledCell"] div,
-    .stDataFrame div[role="grid"] div[role="gridcell"] div,
-    .stDataFrame td div, 
-    .stDataFrame td {
-        white-space: pre !important;
-        white-space: pre-line !important;
-        word-wrap: break-word !important;
-        line-height: 1.3 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# =================================================================
 # 0. パス設定とお気に入り（プロジェクト）データの読み込み・保存関数
 # =================================================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -186,16 +160,20 @@ def get_jma_weather(code):
         pass
     return {}
 
-def style_weather(val):
+def get_cell_style(cloud, rain):
+    """HTMLテーブル用の背景色スタイル判定"""
+    if rain >= 50:
+        return "background-color: #D64933; color: white;"
+    elif cloud <= 30:
+        return "background-color: #92DCE5; color: black;"
+    return "background-color: #1E2530; color: #E0E0E0;"
+
+def style_weather_pc(val):
+    """従来のPCデータフレーム用の色判定"""
     try:
-        # 改行されていても正しく色判定ができるように調整
-        val_clean = str(val).replace("\n", " ")
-        cloud_part = val_clean.split("雲:")[1].split("%")[0].strip()
-        rain_part = val_clean.split("雨:")[1].split("%")[0].strip()
-        
-        cloud_val = int(cloud_part)
-        rain_val = int(rain_part)
-        
+        main_part = str(val).split("|")[0].strip()
+        cloud_val = int(main_part.split("雲:")[1].split("%")[0])
+        rain_val = int(main_part.split("雨:")[1].split("%")[0])
         if rain_val >= 50:
             return "background-color: #D64933; color: white"
         elif cloud_val <= 30:
@@ -239,66 +217,87 @@ if st.session_state.selected_locations:
                         jma_key = date_raw.split("-")[1].zfill(2) + "/" + date_raw.split("-")[2].zfill(2)
                         date_str = jma_key
                     
-                    cloud = int(day.get('cloudcover', 0))
-                    vc_rain = int(day.get('precipprob', 0))
-                    jma_val = jma_data.get(jma_key, "")
-                    
-                    weather_raw_matrix.setdefault(display_id, {})[date_str] = {
-                        "cloud": cloud,
-                        "vc_rain": vc_rain,
-                        "jma": jma_val
+                    location_forecasts[date_str] = {
+                        "cloud": int(day.get('cloudcover', 0)),
+                        "vc_rain": int(day.get('precipprob', 0)),
+                        "jma": jma_data.get(jma_key, "")
                     }
+                weather_raw_matrix[display_id] = location_forecasts
                 
     if weather_raw_matrix:
         st.subheader("📊 選択エリアの2週間気象比較マトリクス")
         is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
         
-        formatted_matrix = {}
-        for loc_id, forecasts in weather_raw_matrix.items():
-            loc_formatted = {}
-            for date_str, data in forecasts.items():
-                cloud = data["cloud"]
-                vc_rain = data["vc_rain"]
-                jma = data["jma"]
-                
-                if is_mobile_view:
-                    # スマホ表示：各項目の後ろに「\n」を入れて縦に並べる
-                    cell_text = f"雲:{cloud}%\n雨:{vc_rain}%"
-                    if jma:
-                        cell_text += f"\n{jma}"
-                else:
-                    cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
-                    if jma:
-                        cell_text += f" | {jma}"
-                        
-                loc_formatted[date_str] = cell_text
-            formatted_matrix[loc_id] = loc_formatted
-            
-        df_base = pd.DataFrame(formatted_matrix).T
-        col_config = {}
-        
         if is_mobile_view:
-            short_names = []
-            for name in df_base.index:
-                s_name = name.split("】")[-1].strip()
-                s_name = s_name.replace("周辺", "")
-                short_names.append(s_name)
+            # ==========================================
+            # 📱 スマホモード：HTMLを組んで完璧に3行化する
+            # ==========================================
+            dates = list(next(iter(weather_raw_matrix.values())).keys())
             
-            df_base.index = short_names
-            df_display = df_base.T
+            # 短縮された地域名リストを生成
+            short_loc_ids = []
+            loc_keys = list(weather_raw_matrix.keys())
+            for name in loc_keys:
+                s_name = name.split("】")[-1].strip().replace("周辺", "")
+                short_loc_ids.append(s_name)
             
-            # 日付列をスリムに固定(75px)、地域列も3行化に伴い超コンパクトに固定(95px)
-            col_config["_index"] = st.column_config.Column(width=75)
-            for col in df_display.columns:
-                col_config[col] = st.column_config.Column(width=95)
+            # 超コンパクト設計のHTMLテーブル作成
+            html = """
+            <div style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                <table style="width: 100%; min-width: 320px; border-collapse: collapse; font-size: 12px; font-family: sans-serif; text-align: center; line-height: 1.2;">
+                    <thead>
+                        <tr style="background-color: #262730; color: #FFFFFF;">
+                            <th style="padding: 6px 4px; border: 1px solid #464855; min-width: 65px;">日付</th>
+            """
+            for s_name in short_loc_ids:
+                html += f'<th style="padding: 6px 4px; border: 1px solid #464855; min-width: 85px;">{s_name}</th>'
+            html += "</tr></thead><tbody>"
+            
+            # 行（日付）ごとにデータを埋め込む
+            for date in dates:
+                html += f'<tr><td style="padding: 6px 4px; border: 1px solid #464855; background-color: #262730; color: #E0E0E0; font-weight: bold;">{date}</td>'
+                for loc_id in loc_keys:
+                    data = weather_raw_matrix[loc_id][date]
+                    cloud = data["cloud"]
+                    vc_rain = data["vc_rain"]
+                    jma = data["jma"] if data["jma"] else "&nbsp;"
+                    
+                    bg_style = get_cell_style(cloud, vc_rain)
+                    
+                    # 🔴 ここで明示的に<br>タグを入れ、絶対に3行に分割する
+                    html += f"""
+                    <td style="padding: 6px 4px; border: 1px solid #464855; {bg_style}">
+                        雲:{cloud}%<br>
+                        雨:{vc_rain}%<br>
+                        <span style="font-size: 11px; opacity: 0.9;">{jma}</span>
+                    </td>
+                    """
+                html += "</tr>"
+            html += "</tbody></table></div>"
+            
+            # 完成したHTMLを画面に展開
+            st.components.v1.html(html, height=650, scrolling=True)
+            
         else:
-            df_display = df_base
-            col_config = None
+            # ==========================================
+            # 💻 PCモード：従来の使い慣れたデータフレーム
+            # ==========================================
+            formatted_matrix = {}
+            for loc_id, forecasts in weather_raw_matrix.items():
+                loc_formatted = {}
+                for date_str, data in forecasts.items():
+                    cell_text = f"雲:{data['cloud']}%/雨:{data['vc_rain']}%"
+                    if data['jma']:
+                        cell_text += f" | {data['jma']}"
+                    loc_formatted[date_str] = cell_text
+                formatted_matrix[loc_id] = loc_formatted
+                
+            df_base = pd.DataFrame(formatted_matrix).T
+            styled_df = df_base.style.map(style_weather_pc)
+            st.dataframe(styled_df, use_container_width=True)
             
-        styled_df = df_display.style.map(style_weather)
-        st.dataframe(styled_df, use_container_width=True, column_config=col_config)
         st.caption("※雲量30%以下は水色、降水確率 50%以上は赤で表示しています。")
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.5.1 Multi-Line Linebreak Enforcement")
+st.caption("ver1.6.0 Hybrid Native-HTML Engine")
