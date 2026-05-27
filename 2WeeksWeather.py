@@ -9,11 +9,11 @@ st.set_page_config(page_title="気象監視ダッシュボード 2WeeksWeather",
 st.title("気象監視ダッシュボード 2WeeksWeather")
 
 # =================================================================
-# スマホ用のカスタムCSS（表の文字サイズを少し小さくし、余白を詰める）
+# スマホ用のカスタムCSS（改行を強制し、文字サイズと余白を最適化）
 # =================================================================
 st.markdown("""
     <style>
-    /* Streamlitのデータフレーム全体の文字サイズを調整 */
+    /* データフレーム全体の文字サイズを調整 */
     .stDataFrame div[data-testid="stTable"] div {
         font-size: 13px !important;
     }
@@ -21,9 +21,15 @@ st.markdown("""
     .stDataFrame td, .stDataFrame th {
         padding: 6px 4px !important;
     }
-    /* セル内での改行（\n）をブラウザ上で有効化する設定 */
-    .stDataFrame td div {
+    /* 🔴 セル内での改行(\n)をあらゆるブラウザ・環境で絶対に強制する設定 */
+    .stDataFrame div[data-testid="stTable"] td [data-testid="stVisualStyledCell"] div,
+    .stDataFrame div[role="grid"] div[role="gridcell"] div,
+    .stDataFrame td div, 
+    .stDataFrame td {
+        white-space: pre !important;
         white-space: pre-line !important;
+        word-wrap: break-word !important;
+        line-height: 1.3 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -182,12 +188,13 @@ def get_jma_weather(code):
 
 def style_weather(val):
     try:
-        # 改行や空白を考慮して数値を抽出するように判定ロジックを強化
-        lines = str(val).split("\n")
-        main_part = lines[0] if "雲:" in lines[0] else lines[0].split("|")[0]
+        # 改行されていても正しく色判定ができるように調整
+        val_clean = str(val).replace("\n", " ")
+        cloud_part = val_clean.split("雲:")[1].split("%")[0].strip()
+        rain_part = val_clean.split("雨:")[1].split("%")[0].strip()
         
-        cloud_val = int(main_part.split("雲:")[1].split("%")[0].strip())
-        rain_val = int(main_part.split("雨:")[1].split("%")[0].strip())
+        cloud_val = int(cloud_part)
+        rain_val = int(rain_part)
         
         if rain_val >= 50:
             return "background-color: #D64933; color: white"
@@ -207,7 +214,6 @@ if st.session_state.selected_locations:
         st.session_state.selected_locations = []
         st.rerun()
 
-    # 💡 あとで「スマホ用」「PC用」の2通りのテキストを作れるよう、生データを記憶
     weather_raw_matrix = {}
     WEEK_DAYS = ["月", "火", "水", "木", "金", "土", "日"]
     
@@ -237,19 +243,16 @@ if st.session_state.selected_locations:
                     vc_rain = int(day.get('precipprob', 0))
                     jma_val = jma_data.get(jma_key, "")
                     
-                    # 生データを辞書で保存
-                    location_forecasts[date_str] = {
+                    weather_raw_matrix.setdefault(display_id, {})[date_str] = {
                         "cloud": cloud,
                         "vc_rain": vc_rain,
                         "jma": jma_val
                     }
-                weather_raw_matrix[display_id] = location_forecasts
                 
     if weather_raw_matrix:
         st.subheader("📊 選択エリアの2週間気象比較マトリクス")
         is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
         
-        # モードに応じてテキストを組み立てる
         formatted_matrix = {}
         for loc_id, forecasts in weather_raw_matrix.items():
             loc_formatted = {}
@@ -259,12 +262,11 @@ if st.session_state.selected_locations:
                 jma = data["jma"]
                 
                 if is_mobile_view:
-                    # 📱 スマホ表示の時は「縦に区切る（改行 \n）」
+                    # スマホ表示：各項目の後ろに「\n」を入れて縦に並べる
                     cell_text = f"雲:{cloud}%\n雨:{vc_rain}%"
                     if jma:
                         cell_text += f"\n{jma}"
                 else:
-                    # 💻 PC表示の時は「綺麗に横一列に並べる」
                     cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
                     if jma:
                         cell_text += f" | {jma}"
@@ -285,7 +287,7 @@ if st.session_state.selected_locations:
             df_base.index = short_names
             df_display = df_base.T
             
-            # 日付列をさらに細く(75px)、地域列も改行に最適化してコンパクト(95px)に
+            # 日付列をスリムに固定(75px)、地域列も3行化に伴い超コンパクトに固定(95px)
             col_config["_index"] = st.column_config.Column(width=75)
             for col in df_display.columns:
                 col_config[col] = st.column_config.Column(width=95)
@@ -299,4 +301,4 @@ if st.session_state.selected_locations:
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.5.0 Adaptive-Layout Smart Edition")
+st.caption("ver1.5.1 Multi-Line Linebreak Enforcement")
