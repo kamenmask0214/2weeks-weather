@@ -21,6 +21,10 @@ st.markdown("""
     .stDataFrame td, .stDataFrame th {
         padding: 6px 4px !important;
     }
+    /* セル内での改行（\n）をブラウザ上で有効化する設定 */
+    .stDataFrame td div {
+        white-space: pre-line !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -178,9 +182,12 @@ def get_jma_weather(code):
 
 def style_weather(val):
     try:
-        main_part = val.split("|")[0].strip()
-        cloud_val = int(main_part.split("雲:")[1].split("%")[0])
-        rain_val = int(main_part.split("雨:")[1].split("%")[0])
+        # 改行や空白を考慮して数値を抽出するように判定ロジックを強化
+        lines = str(val).split("\n")
+        main_part = lines[0] if "雲:" in lines[0] else lines[0].split("|")[0]
+        
+        cloud_val = int(main_part.split("雲:")[1].split("%")[0].strip())
+        rain_val = int(main_part.split("雨:")[1].split("%")[0].strip())
         
         if rain_val >= 50:
             return "background-color: #D64933; color: white"
@@ -200,7 +207,8 @@ if st.session_state.selected_locations:
         st.session_state.selected_locations = []
         st.rerun()
 
-    weather_matrix = {}
+    # 💡 あとで「スマホ用」「PC用」の2通りのテキストを作れるよう、生データを記憶
+    weather_raw_matrix = {}
     WEEK_DAYS = ["月", "火", "水", "木", "金", "土", "日"]
     
     with st.spinner("最新データを収集中..."):
@@ -227,22 +235,44 @@ if st.session_state.selected_locations:
                     
                     cloud = int(day.get('cloudcover', 0))
                     vc_rain = int(day.get('precipprob', 0))
+                    jma_val = jma_data.get(jma_key, "")
                     
-                    cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
-                    if jma_key in jma_data:
-                        cell_text += f" | {jma_data[jma_key]}"
-                    
-                    location_forecasts[date_str] = cell_text
-                weather_matrix[display_id] = location_forecasts
+                    # 生データを辞書で保存
+                    location_forecasts[date_str] = {
+                        "cloud": cloud,
+                        "vc_rain": vc_rain,
+                        "jma": jma_val
+                    }
+                weather_raw_matrix[display_id] = location_forecasts
                 
-    if weather_matrix:
-        df_base = pd.DataFrame(weather_matrix).T
-        
+    if weather_raw_matrix:
         st.subheader("📊 選択エリアの2週間気象比較マトリクス")
-        
         is_mobile_view = st.checkbox("📱 スマートフォンの場合はチェック（縦横を入れ替える）", value=False)
         
-        # 💡 列設定（column_config）の初期化
+        # モードに応じてテキストを組み立てる
+        formatted_matrix = {}
+        for loc_id, forecasts in weather_raw_matrix.items():
+            loc_formatted = {}
+            for date_str, data in forecasts.items():
+                cloud = data["cloud"]
+                vc_rain = data["vc_rain"]
+                jma = data["jma"]
+                
+                if is_mobile_view:
+                    # 📱 スマホ表示の時は「縦に区切る（改行 \n）」
+                    cell_text = f"雲:{cloud}%\n雨:{vc_rain}%"
+                    if jma:
+                        cell_text += f"\n{jma}"
+                else:
+                    # 💻 PC表示の時は「綺麗に横一列に並べる」
+                    cell_text = f"雲:{cloud}%/雨:{vc_rain}%"
+                    if jma:
+                        cell_text += f" | {jma}"
+                        
+                loc_formatted[date_str] = cell_text
+            formatted_matrix[loc_id] = loc_formatted
+            
+        df_base = pd.DataFrame(formatted_matrix).T
         col_config = {}
         
         if is_mobile_view:
@@ -255,23 +285,18 @@ if st.session_state.selected_locations:
             df_base.index = short_names
             df_display = df_base.T
             
-            # 📱 【スマホ用・幅の固定割り当て】
-            # 左端の「日付列」の幅を 85px にガチガチに固定して余白を抹殺
-            col_config["_index"] = st.column_config.Column(width=85)
-            # 各地域名の列の幅を 140px に固定して、文字が1行でスッキリ収まるように調整
+            # 日付列をさらに細く(75px)、地域列も改行に最適化してコンパクト(95px)に
+            col_config["_index"] = st.column_config.Column(width=75)
             for col in df_display.columns:
-                col_config[col] = st.column_config.Column(width=140)
+                col_config[col] = st.column_config.Column(width=95)
         else:
             df_display = df_base
-            # パソコン表示時は自動幅調整
             col_config = None
             
         styled_df = df_display.style.map(style_weather)
-        
-        # 💡 column_config を適用してデータフレームを表示
         st.dataframe(styled_df, use_container_width=True, column_config=col_config)
         st.caption("※雲量30%以下は水色、降水確率 50%以上は赤で表示しています。")
 else:
     st.info("上のドロップダウンから地域を選び、「➕ 一覧に追加」するか、保存されたプロジェクトを呼び出してください。")
 
-st.caption("ver1.4.2 Column-Anchored Layout")
+st.caption("ver1.5.0 Adaptive-Layout Smart Edition")
